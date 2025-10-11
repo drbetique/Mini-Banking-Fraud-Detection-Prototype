@@ -1,9 +1,21 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
+from detection_logic import detect_anomalies
 import sqlite3
-import os
 
-# --- Helper Function for Color Coding ---
+# --- Configuration ---
+st.set_page_config(
+    page_title="Mini Banking Fraud Detection Prototype",
+    layout="wide"
+)
+
+# Database constants
+DB_NAME = 'bank_data.db'
+TABLE_NAME = 'transactions'
+
+
+# --- Helper Function for Color Coding (NEW) ---
 def color_score(score):
     """Returns an HTML string to display the score with a colored background."""
     
@@ -15,203 +27,190 @@ def color_score(score):
         color = "#ffbd59"  # Amber/Yellow for Medium Risk
         risk_level = "MEDIUM"
     else:
-        color = "#008000"  # Green for Low/No Risk (use a dark green for contrast)
+        color = "#008000"  # Dark Green for Low/No Risk
         risk_level = "LOW"
         
-    # 2. Return styled HTML
-    html_code = f"""
-    <div style="background-color: {color}; color: white; padding: 5px; border-radius: 5px; 
-                text-align: center; font-weight: bold; font-size: 14px;">
-        {score:.3f} ({risk_level})
-    </div>
-    """
+    # 2. Return styled HTML (Ensuring minimal newline characters)
+    html_code = (
+        f'<div style="background-color: {color}; color: white; padding: 4px; '
+        f'border-radius: 4px; text-align: center; font-weight: bold; '
+        f'font-size: 13px; line-height: 1.2;">'
+        f'{score:.3f} ({risk_level})'
+        f'</div>'
+    )
     return html_code
 
-# Import the core detection logic function from your file
-from detection_logic import detect_anomalies, DB_NAME, TABLE_NAME
 
-# --- Configuration for Streamlit App ---
-st.set_page_config(
-    page_title="Mini AFC Fraud Detection Prototype",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# --- Data Loading (Caching for performance) ---
+# This function calls detect_anomalies which contains the ML model logic
+@st.cache_data(ttl=600)
+def load_anomalies():
+    return detect_anomalies()
 
-# --- Helper Functions (Using caching for performance) ---
-
-@st.cache_data
-def load_total_data():
-    """Load all transaction data for total counts (cached)."""
-    if not os.path.exists(DB_NAME):
-        return pd.DataFrame()
-        
+@st.cache_data(ttl=600)
+def load_all_transactions():
     conn = sqlite3.connect(DB_NAME)
     df = pd.read_sql_query(f"SELECT * FROM {TABLE_NAME}", conn)
     conn.close()
-    
-    # Convert timestamp for charting
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df['date'] = df['timestamp'].dt.date
-    
     return df
 
-@st.cache_data
-def get_anomalies_data(total_df):
-    """Run the anomaly detection logic (cached)."""
-    # Note: We now pass total_df to force re-run if underlying data changes
-    return detect_anomalies()
 
-# --- Load Data Once ---
-total_df = load_total_data()
-if total_df.empty:
-    st.error(f"Database file '{DB_NAME}' not found. Please run 'setup_db.py'.")
-    st.stop() # Stop if data loading failed
+# --- Main Application ---
 
-anomalies_df = get_anomalies_data(total_df)
+st.title("Mini Banking Fraud Detection Prototype 🛡️")
 
-# --- Global Metrics ---
-total_transactions = len(total_df)
-total_anomalies = len(anomalies_df)
-anomaly_rate = (total_anomalies / total_transactions) * 100 if total_transactions > 0 else 0
+# Load dataframes
+anomaly_df = load_anomalies()
+all_df = load_all_transactions()
+total_transactions = len(all_df)
+total_anomalies = len(anomaly_df)
 
-st.title("Mini Banking Fraud Detection Prototype")
-st.markdown("---")
+# Tabs
+tab1, tab2 = st.tabs(["Summary Dashboard", "Anomaly Review Queue"])
 
-
-# ----------------------------------------------------
-# 1. TABBED NAVIGATION
-# ----------------------------------------------------
-
-tab1, tab2 = st.tabs(["Dashboard Summary", "Anomaly Review"])
-
-# ====================================================
-# TAB 1: DASHBOARD SUMMARY
-# ====================================================
 with tab1:
+    st.header("Risk Overview")
     
-    st.header("Overall Performance Metrics")
-    
-    # Enhanced Metric Cards
     col1, col2, col3 = st.columns(3)
-
+    
+    # KIP 1: Total Transactions
     with col1:
-        st.metric("Total Transactions Analyzed", f"{total_transactions:,}")
+        st.metric(label="Total Transactions Analyzed", value=f"{total_transactions:,.0f}")
 
+    # KIP 2: Total Anomalies Found
     with col2:
-        st.metric("Potential Anomalies Detected", f"{total_anomalies:,}")
+        st.metric(label="Total Anomalies Flagged", value=f"{total_anomalies:,.0f}")
         
+    # KIP 3: Fraud Rate
     with col3:
-        # Highlighted metric for quick attention
-        st.markdown(f"""
-            <div style="background-color: #ff4b4b; padding: 10px; border-radius: 5px; color: white;">
-                <p style="font-size: 14px; margin: 0;">Anomaly Rate</p>
-                <h3 style="margin: 0;">{anomaly_rate:.2f} %</h3>
-            </div>
-            """, unsafe_allow_html=True)
-        # st.metric("Anomaly Rate", f"{anomaly_rate:.2f} %") # Standard metric as alternative
+        # Avoid division by zero
+        fraud_rate = (total_anomalies / total_transactions) * 100 if total_transactions else 0
+        st.metric(label="Anomaly Rate", value=f"{fraud_rate:.2f}%")
         
     st.markdown("---")
 
-    # --- Chart A: Transaction Volume Trend ---
-    st.subheader("Transaction Volume Over Time (Last 30 Days)")
-    
-    # Group total transactions by date
-    daily_volume = total_df.groupby('date').size().reset_index(name='Daily Volume')
-    daily_volume['date'] = daily_volume['date'].astype(str) # Convert date to string for charting
-    
-    st.line_chart(daily_volume, x='date', y='Daily Volume', use_container_width=True)
-    st.caption("Monitoring the general transaction baseline provides crucial context.")
-    
-    st.markdown("---")
-    
-    # --- Chart B: Anomaly Distribution by Location ---
-    st.subheader("Anomaly Concentration by Location")
-    
-    if not anomalies_df.empty:
-        location_counts = anomalies_df['location'].value_counts().reset_index()
-        location_counts.columns = ['Location', 'Anomaly Count']
-        st.bar_chart(location_counts, x='Location', y='Anomaly Count', use_container_width=True)
-        st.caption("Helps identify geographical hotspots for potential fraud.")
+    col_chart, col_map = st.columns([1, 1])
 
-# ====================================================
-# TAB 2: ANOMALY REVIEW
-# ====================================================
+    with col_chart:
+        st.subheader("Anomalies by Merchant Category")
+        category_counts = anomaly_df['merchant_category'].value_counts().reset_index()
+        category_counts.columns = ['Merchant Category', 'Count']
+        
+        fig_bar = px.bar(
+            category_counts,
+            x='Merchant Category',
+            y='Count',
+            color='Merchant Category',
+            title='Flagged Anomalies by Type',
+            template='plotly_dark'
+        )
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+    with col_map:
+        st.subheader("Anomalies by Location")
+        location_counts = anomaly_df['location'].value_counts().reset_index()
+        location_counts.columns = ['Location', 'Count']
+        
+        # Simple table for location counts
+        st.dataframe(location_counts, use_container_width=True, hide_index=True)
+
+
 with tab2:
-    st.header("Detailed Case Inspection and Filtering")
+    st.header(f"Review Queue: {total_anomalies} Anomalies Found")
     
-    if anomalies_df.empty:
-        st.success("No anomalies detected in the current dataset!")
+    if anomaly_df.empty:
+        st.success("No anomalies currently flagged for review.")
     else:
-        # 2. Add Sidebar Filters (This remains the same)
+        # --- Sidebar Filters ---
         st.sidebar.header("Filter Anomalies")
-
-        # Filter by Amount
-        min_amt = float(anomalies_df['amount'].min())
-        max_amt = float(anomalies_df['amount'].max())
+        
+        # Filter 1: Transaction Amount
+        min_amount = anomaly_df['amount'].min()
+        max_amount = anomaly_df['amount'].max()
         amount_range = st.sidebar.slider(
             "Transaction Amount ($)",
-            min_value=min_amt,
-            max_value=max_amt,
-            value=(min_amt, max_amt)
+            float(min_amount),
+            float(max_amount),
+            (float(min_amount), float(max_amount))
         )
 
-        # Filter by Alert Reason
-        all_reasons = ['All'] + sorted(anomalies_df['alert_reason'].unique().tolist())
-        selected_reason = st.sidebar.selectbox(
-            "Alert Reason",
-            options=all_reasons
-        )
+        # Filter 2: Alert Reason
+        reasons = ['All'] + anomaly_df['alert_reason'].unique().tolist()
+        selected_reason = st.sidebar.selectbox("Alert Reason", options=reasons)
 
         # Apply Filters
-        filtered_df = anomalies_df[
-            (anomalies_df['amount'] >= amount_range[0]) & 
-            (anomalies_df['amount'] <= amount_range[1])
+        filtered_df = anomaly_df[
+            (anomaly_df['amount'] >= amount_range[0]) & 
+            (anomaly_df['amount'] <= amount_range[1])
         ]
-
+        
         if selected_reason != 'All':
-            # Use string contains for combined reasons (e.g., 'High Value & Suspicious Combo')
-            filtered_df = filtered_df[filtered_df['alert_reason'].str.contains(selected_reason)]
+            filtered_df = filtered_df[filtered_df['alert_reason'] == selected_reason]
 
-        # 3. Display Filtered Results
-        st.subheader(f"Displaying {len(filtered_df):,} Anomalies for Review")
+        # Display filtered count
+        st.info(f"Displaying {len(filtered_df):,}.0 Anomalies for Review")
 
-        # Format the data for better display in the UI
-        display_df = filtered_df.copy()
-        # --- Apply Color Coding to ML Score ---
-        display_df['ML Anomaly Score'] = display_df['ml_anomaly_score'].apply(color_score)
+
+        # --- MANUAL HTML TABLE DISPLAY (FIXED LOGIC) ---
         
-        display_df['timestamp'] = pd.to_datetime(display_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M')
-        
-        # Drop the original numerical column
-        display_df = display_df.drop(columns=['ml_anomaly_score'])
-
-        # Reorder and select columns for a clearer analyst view
+        # 1. Define the final columns to show
+        # Note: We use 'ml_anomaly_score' here, but it will be formatted inside the loop
         display_cols = [
-            'ML Anomaly Score', # USE THE NEW COLUMN NAME
-            'timestamp', 
-            'alert_reason', 
-            'amount', 
-            'account_id', 
-            'merchant_category', 
-            'location', 
-            'transaction_id'
+            'ml_anomaly_score', 'timestamp', 'alert_reason', 
+            'amount', 'account_id', 'merchant_category', 'location', 
+            'transaction_id' # Include ID but don't show it in the loop unless needed
         ]
         
-        # IMPORTANT: When displaying HTML content, we must use markdown instead of st.dataframe
-        # Since st.dataframe doesn't support HTML styling inside cells, we render the table manually.
+        # 2. Start the HTML table structure
+        html = '<table style="width:100%; border-collapse: collapse; font-size: 14px;">'
         
-        # Display the main table using st.dataframe for simplicity (Streamlit has been updated 
-        # to sometimes handle simple HTML in dataframes, but it's not guaranteed). 
-        # A more robust solution is a custom component like streamlit-aggrid, but we'll try simple st.dataframe first.
+        # Add the header row (Styling for dark background header)
+        html += '<tr style="background-color: #333; color: white; border-bottom: 2px solid #555;">'
+        for col in display_cols:
+            header_name = col.replace('_', ' ').title().replace('Ml ', 'ML ')
+            html += f'<th style="padding: 10px 8px; text-align: left; font-weight: bold;">{header_name}</th>'
+        html += '</tr>'
+        
+        # 3. Add data rows
+        for index, row in filtered_df.iterrows():
+            
+            # Alternate row background for better readability
+            row_style = 'background-color: #1e1e1e;' if index % 2 == 0 else 'background-color: #2a2a2a;'
+            html += f'<tr style="border-bottom: 1px solid #444; {row_style}">'
+            
+            # --- CUSTOM CELL RENDERING ---
+            for col in display_cols:
+                
+                cell_content = row[col]
+                
+                # Apply color styling to the ML score column
+                if col == 'ml_anomaly_score':
+                    styled_content = color_score(row['ml_anomaly_score'])
+                    html += f'<td style="padding: 4px 8px;">{styled_content}</td>'
+                
+                # Format currency for the amount column
+                elif col == 'amount':
+                    formatted_amount = f"€{cell_content:,.2f}"
+                    html += f'<td style="padding: 8px; color: #78a9ff;">{formatted_amount}</td>'
+                
+                # Format timestamp
+                elif col == 'timestamp':
+                    formatted_time = pd.to_datetime(cell_content).strftime('%Y-%m-%d %H:%M')
+                    html += f'<td style="padding: 8px;">{formatted_time}</td>'
+                
+                # Standard text cell for all other columns
+                else:
+                    html += f'<td style="padding: 8px;">{cell_content}</td>'
+            
+            html += '</tr>' # End of row
+            
+        html += '</table>' # End of table
 
-        st.dataframe(
-            display_df[display_cols], 
-            use_container_width=True, 
-            hide_index=True,
-            # CRITICAL: This is how we allow the HTML from our color_score function to render
-            unsafe_allow_html=True 
-        )
-    
-# Footer
+        # 4. Render the final, correctly structured HTML table
+        st.markdown(html, unsafe_allow_html=True)
+
+
+# --- Footer ---
 st.markdown("---")
-st.caption("Developed by **Victor Betiku** | Prototype built using Python, SQLite, and Streamlit.")
+# REMEMBER TO REPLACE "[Your Name]" with your actual name
+st.caption("Developed by **Victor Ifeoluwa Betiku** | Prototype built using Python, SQLite, and Streamlit.")
