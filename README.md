@@ -31,7 +31,8 @@ The anomaly detection logic (`detection_logic.py`) employs the following busines
 * **Rule 1: High-Value Transaction:** Any transaction amount **greater than or equal to €5,000**.
 * **Rule 2: Suspicious Combo:** Any transaction at a **'Gambling'** merchant occurring **outside of 'Helsinki'**.
 
-**🔗 Live Demo:**
+**🔗 Live Demo:** [https://mini-banking-fraud-detection-prototype-fzb9mjdkc5yplhjozc2h7h.streamlit.app/]
+(https:/mini-banking-fraud-detection-prototype-fzb9mjdkc5yplhjozc2h7h.streamlit.app/)
 
 ***
 
