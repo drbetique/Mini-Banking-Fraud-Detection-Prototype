@@ -1,5 +1,7 @@
 import pandas as pd
 import sqlite3
+import numpy as np 
+from sklearn.ensemble import IsolationForest 
 
 # --- Configuration (using constants from previous phases) ---
 DB_NAME = 'bank_data.db'
@@ -10,69 +12,89 @@ HIGH_VALUE_THRESHOLD = 5000.00
 SUSPICIOUS_MERCHANT = 'Gambling'
 STANDARD_LOCATION = 'Helsinki'
 
-import pandas as pd
-import sqlite3
-import numpy as np # <-- Make sure this is imported at the top of your file
 
-# --- Configuration and Detection Parameters remain the same ---
-# ... (rest of your imports and definitions)
+# ... (imports and DB constants remain the same) ...
 
 def detect_anomalies():
     """
-    Connects to the SQL database, reads transactions, and applies
-    rule-based logic to detect and return anomalous transactions.
+    we Loads data, applies rule-based flags, and runs Isolation Forest for anomaly scoring.
     """
-    try:
-        # 1 & 2. Connect and Fetch Data (NO CHANGE HERE)
-        print(f"Connecting to {DB_NAME} to fetch data...")
-        conn = sqlite3.connect(DB_NAME)
-        sql_query = f"SELECT * FROM {TABLE_NAME}"
-        df = pd.read_sql_query(sql_query, conn)
-        conn.close()
-        print(f"Total transactions fetched: {len(df)}")
-        
-        # 3. Apply Anomaly Detection Rules (FIXED LOGIC)
-        
-        # Rule Definitions (Using >= as we agreed)
-        HIGH_VALUE_THRESHOLD = 5000.00
-        SUSPICIOUS_MERCHANT = 'Gambling'
-        STANDARD_LOCATION = 'Helsinki'
+    conn = sqlite3.connect(DB_NAME)
+    df = pd.read_sql_query(f"SELECT * FROM {TABLE_NAME}", conn)
+    conn.close()
 
-        condition_high_value = df['amount'] >= HIGH_VALUE_THRESHOLD # Rule 1: High Value
-        condition_suspicious_combo = (df['merchant_category'] == SUSPICIOUS_MERCHANT) & \
-                                     (df['location'] != STANDARD_LOCATION) # Rule 2: Suspicious Combo
-                                     
-        # Combine the conditions to identify all anomalies
-        is_anomalous = condition_high_value | condition_suspicious_combo
-        
-        # Create the new 'alert_reason' column for the entire DataFrame (initializing with empty strings)
-        df['alert_reason'] = ''
-        
-        # Use a list to store the reasons for each row
+    if df.empty:
+        return pd.DataFrame()
+
+    # --- 1. Rule-Based Detection (Kept for combined score) ---
+    high_value_threshold = 5000
+    df['is_high_value'] = df['amount'] >= high_value_threshold
+    
+    suspicious_category = 'Gambling'
+    suspicious_location = 'Helsinki'  # Assuming transactions OUTSIDE Helsinki are suspicious
+    df['is_suspicious_combo'] = (df['merchant_category'] == suspicious_category) & (df['location'] != suspicious_location)
+    
+    # --- 2. Isolation Forest (Machine Learning) ---
+    
+    # we Feature Engineering (The model needs numerical features)
+    # We use amount and one-hot encode the merchant category for the model
+    features = df[['amount']].copy()
+    
+    # One-Hot Encode Merchant Category (Crucial for ML on categorical data)
+    features = pd.get_dummies(features, columns=[], prefix='cat', dtype=int)
+    
+    # We fit the model using the features
+    # contamination='auto' lets the model estimate the proportion of outliers (anomalies)
+    model = IsolationForest(
+        contamination='auto',
+        random_state=42,
+        n_estimators=100
+    )
+    
+    model.fit(features)
+    
+    # The decision function returns a score: lower score means higher anomaly likelihood
+    # We invert and scale this score for presentation: 0 (safe) to 1 (high risk)
+    anomaly_scores = model.decision_function(features)
+    
+    # Scale the scores from 0 to 1 for easier interpretation
+    min_score = anomaly_scores.min()
+    max_score = anomaly_scores.max()
+    df['ml_anomaly_score'] = 1 - (anomaly_scores - min_score) / (max_score - min_score)
+    
+    # --- 3. Final Flagging ---
+    
+    # Combine Flags for the UI: ML Score threshold is subjective, let's set it at 0.7 for "High ML Risk"
+    df['is_ml_risk'] = df['ml_anomaly_score'] >= 0.7
+    
+    # Final combined alert reason logic
+    def get_alert_reason(row):
         reasons = []
-        for high_value, suspicious_combo in zip(condition_high_value, condition_suspicious_combo):
-            reason = ''
-            if high_value:
-                reason += 'High Value Transaction'
-            if suspicious_combo:
-                # Add a separator if the previous reason exists
-                if reason:
-                    reason += ' & '
-                reason += 'Suspicious Merchant/Location Combo'
-            reasons.append(reason)
+        if row['is_high_value']:
+            reasons.append("High Value")
+        if row['is_suspicious_combo']:
+            reasons.append("Suspicious Combo")
+        if row['is_ml_risk']:
+            reasons.append("ML Risk")
             
-        # Assign the calculated reasons back to the DataFrame
-        df['alert_reason'] = reasons
+        if not reasons:
+            return None # Not an anomaly
+            
+        # Prioritize ML Risk in the reason for reporting
+        if "ML Risk" in reasons:
+            return "ML Anomaly"
+            
+        return " & ".join(reasons)
 
-        # 4. Filter the DataFrame to only include transactions with an alert reason
-        final_anomalies = df[is_anomalous].copy()
-        
-        return final_anomalies
+    df['alert_reason'] = df.apply(get_alert_reason, axis=1)
 
-    except Exception as e:
-        # IMPORTANT: Keep this error handler for future issues
-        print(f"An error occurred during anomaly detection: {e}") 
-        return pd.DataFrame() # Return an empty DataFrame on failure
+    # Filter to show only flagged transactions
+    anomalies_df = df[df['alert_reason'].notna()].copy()
+    
+    # Format the score to two decimal places
+    anomalies_df['ml_anomaly_score'] = anomalies_df['ml_anomaly_score'].round(3)
+
+    return anomalies_df
 
 # --- Main Execution for Testing ---
 if __name__ == '__main__':
