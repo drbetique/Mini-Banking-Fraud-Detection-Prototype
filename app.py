@@ -173,4 +173,4 @@ with tab2:
     
 # Footer
 st.markdown("---")
-st.caption("Prototype built using Python, SQLite, and Streamlit.")
+st.caption("Developed by **Victor Betiku** | Prototype built using Python, SQLite, and Streamlit.")
