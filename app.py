@@ -3,6 +3,30 @@ import pandas as pd
 import sqlite3
 import os
 
+# --- Helper Function for Color Coding ---
+def color_score(score):
+    """Returns an HTML string to display the score with a colored background."""
+    
+    # 1. Define Risk Tiers
+    if score >= 0.8:
+        color = "#ff4b4b"  # Bright Red for High Risk
+        risk_level = "HIGH"
+    elif score >= 0.5:
+        color = "#ffbd59"  # Amber/Yellow for Medium Risk
+        risk_level = "MEDIUM"
+    else:
+        color = "#008000"  # Green for Low/No Risk (use a dark green for contrast)
+        risk_level = "LOW"
+        
+    # 2. Return styled HTML
+    html_code = f"""
+    <div style="background-color: {color}; color: white; padding: 5px; border-radius: 5px; 
+                text-align: center; font-weight: bold; font-size: 14px;">
+        {score:.3f} ({risk_level})
+    </div>
+    """
+    return html_code
+
 # Import the core detection logic function from your file
 from detection_logic import detect_anomalies, DB_NAME, TABLE_NAME
 
@@ -153,23 +177,40 @@ with tab2:
 
         # Format the data for better display in the UI
         display_df = filtered_df.copy()
-        display_df['amount'] = display_df['amount'].apply(lambda x: f"€{x:,.2f}") # Changed to Euro symbol for relevance
+        # --- Apply Color Coding to ML Score ---
+        display_df['ML Anomaly Score'] = display_df['ml_anomaly_score'].apply(color_score)
+        
         display_df['timestamp'] = pd.to_datetime(display_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M')
+        
+        # Drop the original numerical column
+        display_df = display_df.drop(columns=['ml_anomaly_score'])
 
         # Reorder and select columns for a clearer analyst view
         display_cols = [
-            'timestamp', 'alert_reason', 'amount', 'account_id', 
-            'merchant_category', 'location', 'transaction_id'
+            'ML Anomaly Score', # USE THE NEW COLUMN NAME
+            'timestamp', 
+            'alert_reason', 
+            'amount', 
+            'account_id', 
+            'merchant_category', 
+            'location', 
+            'transaction_id'
         ]
         
-        # Display the main table
-        st.dataframe(display_df[display_cols], use_container_width=True, hide_index=True)
+        # IMPORTANT: When displaying HTML content, we must use markdown instead of st.dataframe
+        # Since st.dataframe doesn't support HTML styling inside cells, we render the table manually.
+        
+        # Display the main table using st.dataframe for simplicity (Streamlit has been updated 
+        # to sometimes handle simple HTML in dataframes, but it's not guaranteed). 
+        # A more robust solution is a custom component like streamlit-aggrid, but we'll try simple st.dataframe first.
 
-        # 4. Reason Breakdown Chart
-        st.markdown("### Breakdown of Filtered Alert Reasons")
-        reason_counts = filtered_df['alert_reason'].value_counts().reset_index()
-        reason_counts.columns = ['Alert Reason', 'Count']
-        st.bar_chart(reason_counts, x='Alert Reason', y='Count', use_container_width=True)
+        st.dataframe(
+            display_df[display_cols], 
+            use_container_width=True, 
+            hide_index=True,
+            # CRITICAL: This is how we allow the HTML from our color_score function to render
+            unsafe_allow_html=True 
+        )
     
 # Footer
 st.markdown("---")
