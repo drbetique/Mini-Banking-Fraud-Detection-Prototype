@@ -244,8 +244,19 @@ with tab2:
         selected_reason = st.sidebar.selectbox("Alert Reason", options=reasons)
         
         # Filter 3: Status
+        # 1. Define the full list of available status options from the data
         statuses = ['All'] + anomaly_df['status'].unique().tolist()
-        selected_status = st.sidebar.multiselect("Review Status", options=statuses, default=['NEW', 'INVESTIGATED'])
+        
+        # 2. Define desired defaults and filter them against the available statuses
+        desired_defaults = ['NEW', 'INVESTIGATED']
+        valid_defaults = [s for s in desired_defaults if s in statuses]
+
+        # 3. Use the filtered list as the default
+        selected_status = st.sidebar.multiselect(
+            "Review Status", 
+            options=statuses, 
+            default=valid_defaults # Use the list guaranteed to be valid
+        )
 
         # Apply Filters
         filtered_df = anomaly_df[
