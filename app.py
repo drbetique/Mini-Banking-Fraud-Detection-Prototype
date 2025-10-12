@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from detection_logic import detect_anomalies
 import sqlite3
+import requests # NEW: Used to fetch data from the FastAPI API
 
 # --- Configuration ---
 st.set_page_config(
@@ -10,12 +10,16 @@ st.set_page_config(
     layout="wide"
 )
 
-# Database constants
+# Database constants (Only needed for load_all_transactions)
 DB_NAME = 'bank_data.db'
 TABLE_NAME = 'transactions'
 
+# CRITICAL API URL: This must be updated with the public URL of your deployed FastAPI service!
+# Used this placeholder for local testing:
+API_URL = "http://127.0.0.1:8000/api/v1/anomalies"
 
-# --- Helper Function for Color Coding (NEW) ---
+
+# --- Helper Function for Color Coding ---
 def color_score(score):
     """Returns an HTML string to display the score with a colored background."""
     
@@ -30,7 +34,7 @@ def color_score(score):
         color = "#008000"  # Dark Green for Low/No Risk
         risk_level = "LOW"
         
-    # 2. Return styled HTML (Ensuring minimal newline characters)
+    # 2. Return styled HTML
     html_code = (
         f'<div style="background-color: {color}; color: white; padding: 4px; '
         f'border-radius: 4px; text-align: center; font-weight: bold; '
@@ -42,13 +46,34 @@ def color_score(score):
 
 
 # --- Data Loading (Caching for performance) ---
-# This function calls detect_anomalies which contains the ML model logic
+
 @st.cache_data(ttl=600)
 def load_anomalies():
-    return detect_anomalies()
+    """Fetches anomaly data from the decoupled FastAPI backend via HTTP request."""
+    st.info(f"Fetching anomaly data from API: {API_URL}")
+    try:
+        # Make the HTTP request to your backend API
+        response = requests.get(API_URL)
+        response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
+        
+        data = response.json().get('data', [])
+        
+        # Convert the returned JSON list back into a DataFrame
+        anomaly_df = pd.DataFrame(data)
+        
+        # Ensure the score is numerical before being passed to color_score()
+        if 'ml_anomaly_score' in anomaly_df.columns:
+             anomaly_df['ml_anomaly_score'] = pd.to_numeric(anomaly_df['ml_anomaly_score'])
+        
+        return anomaly_df
+        
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error connecting to API backend. Ensure 'uvicorn api:app' is running and the API_URL is correct. Error: {e}")
+        return pd.DataFrame() # Return empty DataFrame on failure
 
 @st.cache_data(ttl=600)
 def load_all_transactions():
+    """Loads all transactions directly from the local DB for summary stats."""
     conn = sqlite3.connect(DB_NAME)
     df = pd.read_sql_query(f"SELECT * FROM {TABLE_NAME}", conn)
     conn.close()
@@ -79,11 +104,13 @@ with tab1:
 
     # KIP 2: Total Anomalies Found
     with col2:
-        st.metric(label="Total Anomalies Flagged", value=f"{total_anomalies:,.0f}")
+        # Highlighted if anomalies exist
+        metric_style = "color: #ff4b4b;" if total_anomalies > 0 else "color: #008000;"
+        st.markdown(f'<p style="{metric_style} font-size: 1.5em; font-weight: bold;">{total_anomalies:,.0f}</p>', unsafe_allow_html=True)
+        st.markdown('<p style="font-size: 0.8em; margin-top: -1.5em;">Total Anomalies Flagged</p>', unsafe_allow_html=True)
         
     # KIP 3: Fraud Rate
     with col3:
-        # Avoid division by zero
         fraud_rate = (total_anomalies / total_transactions) * 100 if total_transactions else 0
         st.metric(label="Anomaly Rate", value=f"{fraud_rate:.2f}%")
         
@@ -93,26 +120,31 @@ with tab1:
 
     with col_chart:
         st.subheader("Anomalies by Merchant Category")
-        category_counts = anomaly_df['merchant_category'].value_counts().reset_index()
-        category_counts.columns = ['Merchant Category', 'Count']
-        
-        fig_bar = px.bar(
-            category_counts,
-            x='Merchant Category',
-            y='Count',
-            color='Merchant Category',
-            title='Flagged Anomalies by Type',
-            template='plotly_dark'
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
+        if not anomaly_df.empty:
+            category_counts = anomaly_df['merchant_category'].value_counts().reset_index()
+            category_counts.columns = ['Merchant Category', 'Count']
+            
+            fig_bar = px.bar(
+                category_counts,
+                x='Merchant Category',
+                y='Count',
+                color='Merchant Category',
+                title='Flagged Anomalies by Type',
+                template='plotly_dark'
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
+        else:
+            st.warning("No anomalies to display.")
 
     with col_map:
         st.subheader("Anomalies by Location")
-        location_counts = anomaly_df['location'].value_counts().reset_index()
-        location_counts.columns = ['Location', 'Count']
-        
-        # Simple table for location counts
-        st.dataframe(location_counts, use_container_width=True, hide_index=True)
+        if not anomaly_df.empty:
+            location_counts = anomaly_df['location'].value_counts().reset_index()
+            location_counts.columns = ['Location', 'Count']
+            
+            st.dataframe(location_counts, use_container_width=True, hide_index=True)
+        else:
+            st.warning("No anomalies to display.")
 
 
 with tab2:
@@ -128,7 +160,7 @@ with tab2:
         min_amount = anomaly_df['amount'].min()
         max_amount = anomaly_df['amount'].max()
         amount_range = st.sidebar.slider(
-            "Transaction Amount ($)",
+            "Transaction Amount (€)",
             float(min_amount),
             float(max_amount),
             (float(min_amount), float(max_amount))
@@ -148,17 +180,16 @@ with tab2:
             filtered_df = filtered_df[filtered_df['alert_reason'] == selected_reason]
 
         # Display filtered count
-        st.info(f"Displaying {len(filtered_df):,}.0 Anomalies for Review")
+        st.info(f"Displaying {len(filtered_df):,.0f} Anomalies for Review")
 
 
         # --- MANUAL HTML TABLE DISPLAY (FIXED LOGIC) ---
         
         # 1. Define the final columns to show
-        # Note: We use 'ml_anomaly_score' here, but it will be formatted inside the loop
         display_cols = [
             'ml_anomaly_score', 'timestamp', 'alert_reason', 
             'amount', 'account_id', 'merchant_category', 'location', 
-            'transaction_id' # Include ID but don't show it in the loop unless needed
+            'transaction_id'
         ]
         
         # 2. Start the HTML table structure
