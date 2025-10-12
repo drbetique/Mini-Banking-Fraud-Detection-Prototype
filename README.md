@@ -1,51 +1,95 @@
-# 🚨 Mini Banking Fraud Detection Prototype (Python + SQL + Streamlit)
+# Mini Banking Fraud Detection Prototype 🛡️
 
-## 🎯 Project Overview
+This project is a prototype for a real-time anomaly detection system in banking transactions. It is built using a decoupled architecture, consisting of a **FastAPI backend** hosted on Azure and a **Streamlit frontend** hosted on Streamlit Community Cloud.
 
-This project is a full-stack prototype designed to showcase skills in data handling, SQL integration, Python data logic, and professional UI development—directly relevant to Anti-Financial Crime (AFC) development roles. It demonstrates both the data processing backend and the analyst-facing UI.
+## 🚀 Architecture Overview
 
-The application simulates a banking environment by generating synthetic transaction data, storing it in an SQL database, applying rule-based anomaly detection, and visualizing the results in an interactive web dashboard.
+The system architecture is a standard two-tier deployment:
 
-## 🛠️ Tech Stack
+1.  **Backend (FastAPI):** Hosts the anomaly detection logic and serves the results via a REST API endpoint. It's containerized using Docker and deployed to Azure App Service.
+2.  **Frontend (Streamlit):** A web dashboard that consumes the anomaly data from the live Azure API and presents it for review.
 
-| Component | Technology | Rationale & Relevance |
+## 🌐 Live Application Links
+
+| Component | Status | Live URL |
 | :--- | :--- | :--- |
-| **Backend & Logic** | **Python**, Pandas, NumPy | Core programming language requirement for data manipulation and fraud detection algorithms. |
-| **Database** | **SQLite** (local), **SQL** | Demonstrates strong SQL skills for data querying and management. |
-| **Frontend & UI** | **Streamlit** | Showcases rapid UI development skills for building analyst dashboards. |
-| **Deployment** | Streamlit Community Cloud | Proves ability to take a project from local development to a live, shareable application. |
+| **Streamlit Dashboard** | Operational | **[Insert your Streamlit Cloud App URL Here]** |
+| **FastAPI Backend (API)** | Running | **[Insert your Azure API Base URL Here]** |
 
-***
+### API Endpoint for Anomaly Data
 
-## ✨ Key Features & Demo
+To view the raw JSON data that powers the dashboard, access the full endpoint:
+# Mini Banking Fraud Detection Prototype 🛡️
 
-The dashboard is split into two main sections using tabs to serve an AFC analyst's workflow:
+This project is a prototype for a real-time anomaly detection system in banking transactions. It is built using a decoupled architecture, consisting of a **FastAPI backend** hosted on Azure and a **Streamlit frontend** hosted on Streamlit Community Cloud.
 
-1.  **Dashboard Summary:** Provides high-level metrics (Total Transactions, Anomaly Rate) and **contextual charts** (Daily Volume Trend, Anomaly Location Heatmap).
-2.  **Anomaly Review:** Presents a filterable, sortable **data table** of all flagged transactions, including the calculated **`Alert Reason`**.
+## 🚀 Architecture Overview
 
-### 🔍 Detection Logic
+The system architecture is a standard two-tier deployment:
 
-The anomaly detection logic (`detection_logic.py`) employs the following business rules:
+1.  **Backend (FastAPI):** Hosts the anomaly detection logic and serves the results via a REST API endpoint. It's containerized using Docker and deployed to Azure App Service.
+2.  **Frontend (Streamlit):** A web dashboard that consumes the anomaly data from the live Azure API and presents it for review.
 
-* **Rule 1: High-Value Transaction:** Any transaction amount **greater than or equal to €5,000**.
-* **Rule 2: Suspicious Combo:** Any transaction at a **'Gambling'** merchant occurring **outside of 'Helsinki'**.
+## 🌐 Live Application Links
 
-**🔗 Live Demo:** [https://mini-banking-fraud-detection-prototype-fzb9mjdkc5yplhjozc2h7h.streamlit.app/]
-(https:/mini-banking-fraud-detection-prototype-fzb9mjdkc5yplhjozc2h7h.streamlit.app/)
+| Component | Status | Live URL |
+| :--- | :--- | :--- |
+| **Streamlit Dashboard** | Operational | **https://mini-banking-fraud-detection-prototype-fzb9mjdkc5yplhjozc2h7h.streamlit.app/** |
+| **FastAPI Backend (API)** | Running | **https://mini-fraud-api-vib-c7ehh4h6aqd0bxbb.azurewebsites.net/api/v1/anomalies
+** |
 
-***
+### API Endpoint for Anomaly Data
 
-## 🚀 Getting Started (Local Setup)
+To view the raw JSON data that powers the dashboard, access the full endpoint:
 
-Follow these steps to set up and run the project locally.
+## 🛠️ Deployment Details
+
+### 1. Azure FastAPI Backend
+
+* **Service:** Azure App Service (Linux)
+* **Hosting Plan:** Free F1 Tier (`FraudAppServicePlan`)
+* **Container Image:** Pulled from Docker Hub (`index.docker.io/drbetique/mini-fraud-api:latest`)
+* **Startup Command:** `uvicorn api:app --host 0.0.0.0 --port 8000`
+* **Azure Domain Example:** `mini-fraud-api-vib-c7ehh4h6aqd0bxbb.swedencentral-01.azurewebsites.net`
+
+### 2. Streamlit Frontend
+
+* **Service:** Streamlit Community Cloud
+* **Repository Source:** `drbetique/Mini-Banking-Fraud-Detection-Prototype`
+* **Main File:** `app.py`
+* **Dependencies:** Managed via `requirements.txt` (including `pandas`, `plotly`, `requests`).
+
+## ⚙️ Running Locally (Development)
 
 ### Prerequisites
 
-You need **Python 3.8+** installed.
+* Docker (for the API)
+* Python 3.8+ (for the Streamlit app)
 
-### 1. Clone the Repository
+### Steps
 
-```bash
-git clone [https://github.com/drbetique/mini-fraud-detection-prototype.git](https://github.com/drbetique/mini-fraud-detection-prototype.git)
-cd mini-fraud-detection-prototype
+1.  **Clone the Repository:**
+    ```bash
+    git clone [https://github.com/drbetique/Mini-Banking-Fraud-Detection-Prototype.git](https://github.com/drbetique/Mini-Banking-Fraud-Detection-Prototype.git)
+    cd Mini-Banking-Fraud-Detection-Prototype
+    ```
+
+2.  **Run the API Backend (Using Docker):**
+    The API must be running for the dashboard to function.
+    ```bash
+    # Pull the public image
+    docker pull drbetique/mini-fraud-api:latest
+
+    # Run the container locally (Note: API URL in app.py must be changed for local testing)
+    docker run -d -p 8000:8000 --name fraud-api drbetique/mini-fraud-api:latest
+    ```
+
+3.  **Run the Streamlit Frontend:**
+    You must update the `API_URL` variable in `app.py` to point to your local API (e.g., `http://localhost:8000/api/v1/anomalies`) before running this step.
+    ```bash
+    pip install -r requirements.txt
+    streamlit run app.py
+    ```
+
+---
+**Developed by Victor Ifeoluwa Betiku**
