@@ -16,6 +16,9 @@ TABLE_NAME = 'transactions'
 
 # CRITICAL API URL: This must be updated with the public URL of your deployed FastAPI service!
 API_URL = "https://mini-fraud-api-vib-c7ehh4h6aqd0bxbb.swedencentral-01.azurewebsites.net/api/v1/anomalies"
+# --- API KEY (MUST match the AZURE_API_KEY environment variable set in Azure) ---
+API_KEY = "s3cr3t-pr0t0typ3-k3y-2025" # USED OUR ACTUAL SECRET HERE!
+HEADERS = {"X-API-Key": API_KEY}
 
 
 # --- Helper Function for Color Coding ---
