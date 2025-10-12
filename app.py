@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import sqlite3
-import requests # NEW: Used to fetch data from the FastAPI API
+import requests # Used to fetch data from the FastAPI API
 
 # --- Configuration ---
 st.set_page_config(
@@ -15,8 +15,7 @@ DB_NAME = 'bank_data.db'
 TABLE_NAME = 'transactions'
 
 # CRITICAL API URL: This must be updated with the public URL of your deployed FastAPI service!
-# Used this placeholder for local testing:
-API_URL = "http://127.0.0.1:8000/api/v1/anomalies"
+API_URL = "https://mini-fraud-api-vib-c7ehh4h6aqd0bxbb.swedencentral-01.azurewebsites.net/api/v1/anomalies"
 
 
 # --- Helper Function for Color Coding ---
@@ -63,7 +62,13 @@ def load_anomalies():
         
         # Ensure the score is numerical before being passed to color_score()
         if 'ml_anomaly_score' in anomaly_df.columns:
-             anomaly_df['ml_anomaly_score'] = pd.to_numeric(anomaly_df['ml_anomaly_score'])
+            # CLEANUP STEP 1: Remove any potential '\n' characters from ml_anomaly_score string before converting to numeric
+            anomaly_df['ml_anomaly_score'] = anomaly_df['ml_anomaly_score'].astype(str).str.replace('\n', '', regex=False).str.strip()
+            anomaly_df['ml_anomaly_score'] = pd.to_numeric(anomaly_df['ml_anomaly_score'], errors='coerce')
+        
+        # CLEANUP STEP 2: Remove any potential '\n' characters from location column
+        if 'location' in anomaly_df.columns:
+            anomaly_df['location'] = anomaly_df['location'].astype(str).str.replace('\n', '', regex=False).str.strip()
         
         return anomaly_df
         
@@ -216,7 +221,10 @@ with tab2:
                 
                 # Apply color styling to the ML score column
                 if col == 'ml_anomaly_score':
-                    styled_content = color_score(row['ml_anomaly_score'])
+                    # The value is already a float, remove the unnecessary .item() call.
+                    # Use .fillna(0) in case the cleanup failed to parse a value
+                    score = row['ml_anomaly_score'] if pd.notna(row['ml_anomaly_score']) else 0
+                    styled_content = color_score(score)
                     html += f'<td style="padding: 4px 8px;">{styled_content}</td>'
                 
                 # Format currency for the amount column
@@ -226,7 +234,10 @@ with tab2:
                 
                 # Format timestamp
                 elif col == 'timestamp':
-                    formatted_time = pd.to_datetime(cell_content).strftime('%Y-%m-%d %H:%M')
+                    try:
+                        formatted_time = pd.to_datetime(cell_content).strftime('%Y-%m-%d %H:%M')
+                    except:
+                        formatted_time = str(cell_content) # Fallback if parsing fails
                     html += f'<td style="padding: 8px;">{formatted_time}</td>'
                 
                 # Standard text cell for all other columns
