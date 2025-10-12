@@ -259,3 +259,4 @@ with tab2:
 st.markdown("---")
 # REMEMBER TO REPLACE "[Your Name]" with your actual name
 st.caption("Developed by **Victor Ifeoluwa Betiku** | Prototype built using Python, SQLite, and Streamlit.")
+
