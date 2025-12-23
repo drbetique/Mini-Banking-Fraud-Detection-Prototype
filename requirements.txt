@@ -4,7 +4,7 @@ numpy
 scikit-learn
 fastapi
 uvicorn
-pydantic<2
+pydantic<3
 plotly
 requests
 psycopg2-binary
