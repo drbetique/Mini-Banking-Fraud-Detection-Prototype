@@ -1,117 +1,115 @@
 import pandas as pd
-import sqlite3
-import numpy as np 
-from sklearn.ensemble import IsolationForest 
+import numpy as np
+from sqlalchemy import text
+import mlflow
+import mlflow.sklearn
 
-# --- Configuration (using constants from previous phases) ---
-DB_NAME = 'bank_data.db'
+# --- Configuration ---
 TABLE_NAME = 'transactions'
-
-# --- Detection Parameters ---
 HIGH_VALUE_THRESHOLD = 5000.00
 SUSPICIOUS_MERCHANT = 'Gambling'
 STANDARD_LOCATION = 'Helsinki'
 
-
-# ... (imports and DB constants remain the same) ...
-
-def detect_anomalies():
-    """
-    we Loads data, applies rule-based flags, and runs Isolation Forest for anomaly scoring.
-    """
-    conn = sqlite3.connect(DB_NAME)
-    df = pd.read_sql_query(f"SELECT * FROM {TABLE_NAME}", conn)
-    conn.close()
-
-    if df.empty:
-        return pd.DataFrame()
-
-    # --- 1. Rule-Based Detection (Kept for combined score) ---
-    high_value_threshold = 5000
-    df['is_high_value'] = df['amount'] >= high_value_threshold
-    
-    suspicious_category = 'Gambling'
-    suspicious_location = 'Helsinki'  # Assuming transactions OUTSIDE Helsinki are suspicious
-    df['is_suspicious_combo'] = (df['merchant_category'] == suspicious_category) & (df['location'] != suspicious_location)
-    
-    # --- 2. Isolation Forest (Machine Learning) ---
-    
-    # we Feature Engineering (The model needs numerical features)
-    # We use amount and one-hot encode the merchant category for the model
-    features = df[['amount']].copy()
-    
-    # One-Hot Encode Merchant Category (Crucial for ML on categorical data)
-    features = pd.get_dummies(features, columns=[], prefix='cat', dtype=int)
-    
-    # We fit the model using the features
-    # contamination='auto' lets the model estimate the proportion of outliers (anomalies)
-    model = IsolationForest(
-        contamination='auto',
-        random_state=42,
-        n_estimators=100
+def get_account_aggregates(account_id: str, conn):
+    """Fetches historical aggregates for a given account."""
+    query = text(
+        f"SELECT COUNT(*) as account_tx_count, AVG(amount) as account_avg_amount "
+        f"FROM {TABLE_NAME} WHERE account_id = :account_id"
     )
-    
-    model.fit(features)
-    
-    # The decision function returns a score: lower score means higher anomaly likelihood
-    # We invert and scale this score for presentation: 0 (safe) to 1 (high risk)
-    anomaly_scores = model.decision_function(features)
-    
-    # Scale the scores from 0 to 1 for easier interpretation
-    min_score = anomaly_scores.min()
-    max_score = anomaly_scores.max()
-    df['ml_anomaly_score'] = 1 - (anomaly_scores - min_score) / (max_score - min_score)
-    
-    # --- 3. Final Flagging ---
-    
-    # Combine Flags for the UI: ML Score threshold is subjective, let's set it at 0.7 for "High ML Risk"
-    df['is_ml_risk'] = df['ml_anomaly_score'] >= 0.7
-    
-    # Final combined alert reason logic
-    def get_alert_reason(row):
-        reasons = []
-        if row['is_high_value']:
-            reasons.append("High Value")
-        if row['is_suspicious_combo']:
-            reasons.append("Suspicious Combo")
-        if row['is_ml_risk']:
-            reasons.append("ML Risk")
-            
-        if not reasons:
-            return None # Not an anomaly
-            
-        # Prioritize ML Risk in the reason for reporting
-        if "ML Risk" in reasons:
-            return "ML Anomaly"
-            
-        return " & ".join(reasons)
+    result = conn.execute(query, {"account_id": account_id}).first()
+    if result and result.account_tx_count > 0:
+        return {"account_tx_count": result.account_tx_count, "account_avg_amount": float(result.account_avg_amount)}
+    return {"account_tx_count": 0, "account_avg_amount": 0.0}
 
-    df['alert_reason'] = df.apply(get_alert_reason, axis=1)
+def score_transaction(transaction: dict, aggregates: dict, model, min_score: float, max_score: float):
+    """
+    Scores a single transaction using a pre-loaded model and score boundaries.
+    """
+    if not model or min_score is None or max_score is None:
+        raise RuntimeError("Model or score boundaries are not provided.")
 
-    # Filter to show only flagged transactions
-    anomalies_df = df[df['alert_reason'].notna()].copy()
+    # 1. Engineer features for the single transaction
+    tx_amount = transaction['amount']
+    account_avg = aggregates['account_avg_amount']
+    deviation = (tx_amount - account_avg) / (account_avg + 1e-6) if account_avg > 0 else 0
     
-    # Format the score to two decimal places
-    anomalies_df['ml_anomaly_score'] = anomalies_df['ml_anomaly_score'].round(3)
+    # Create a DataFrame for the single transaction's features
+    tx_features = pd.DataFrame([[tx_amount, account_avg, deviation]], 
+                               columns=['amount', 'account_avg_amount', 'deviation_from_avg'])
 
-    return anomalies_df
+    # 2. Score with the model and scale the score
+    raw_score = model.decision_function(tx_features)[0]
+    scaled_score = 1 - (raw_score - min_score) / (max_score - min_score)
+    
+    # 3. Apply rules to generate an alert reason
+    reasons = []
+    if tx_amount >= HIGH_VALUE_THRESHOLD: reasons.append("High Value")
+    if transaction['merchant_category'] == SUSPICIOUS_MERCHANT and transaction['location'] != STANDARD_LOCATION:
+        reasons.append("Suspicious Combo")
+    if deviation >= 5.0 and aggregates['account_tx_count'] > 5:
+        reasons.append("High Deviation")
+    if scaled_score >= 0.7:
+        reasons.append("ML Risk")
+    
+    alert_reason = None
+    if reasons:
+        if "ML Risk" in reasons: alert_reason = "ML Anomaly"
+        elif "High Deviation" in reasons: alert_reason = "High Deviation from Avg"
+        else: alert_reason = " & ".join(reasons)
+
+    return scaled_score, alert_reason
 
 # --- Main Execution for Testing ---
 if __name__ == '__main__':
-    anomalies_df = detect_anomalies()
+    import os
+    from sqlalchemy import create_engine
+
+    DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://user:password@localhost/bankdb")
+    MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
+    engine = create_engine(DATABASE_URL)
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+    # In a real scenario, you'd load a specific version from the Model Registry
+    # For testing, we'll try to load the latest Production model.
+    model_name = "fraud-detection-model"
+    try:
+        loaded_model = mlflow.pyfunc.load_model(f"models:/{model_name}/Production")
+        client = mlflow.tracking.MlflowClient()
+        model_version = client.search_model_versions(f"name='{model_name}' AND stage='Production'")[0]
+        
+        # Extract min_score and max_score from the model's run parameters
+        run_id = model_version.run_id
+        run = client.get_run(run_id)
+        model_min_score = run.data.metrics.get("min_decision_score")
+        model_max_score = run.data.metrics.get("max_decision_score")
+
+        if model_min_score is None or model_max_score is None:
+            raise ValueError("Min/Max scores not found in MLflow run metrics.")
+
+    except Exception as e:
+        print(f"Error loading model from MLflow: {e}")
+        print("Please ensure a model named 'fraud-detection-model' is registered in 'Production' stage.")
+        print("You might need to run 'python train_model.py' first.")
+        exit(1)
+
+    print("Running anomaly detection in standalone test mode...")
+    with engine.connect() as connection:
+        # 1. Fetch a sample transaction to test
+        sample_tx = pd.read_sql_query(text(f"SELECT * FROM {TABLE_NAME} LIMIT 1"), connection).to_dict('records')[0]
+        account_id = sample_tx['account_id']
+        
+        # 2. Get aggregates for that account
+        account_aggs = get_account_aggregates(account_id, connection)
+        
+        print("\n--- Testing Single Transaction Scoring ---")
+        print(f"Sample Transaction: {sample_tx['transaction_id']}")
+        print(f"Account Aggregates: {account_aggs}")
+        
+        # 3. Score the transaction using the loaded model
+        final_score, final_reason = score_transaction(sample_tx, account_aggs, loaded_model, model_min_score, model_max_score)
+        
+        print(f"\nScore: {final_score:.3f}")
+        print(f"Alert Reason: {final_reason}")
+        print("-" * 50)
     
-    print("-" * 50)
-    print("Anomaly Detection Test Results:")
-    if not anomalies_df.empty:
-        print(f"Found {len(anomalies_df)} anomalous transactions!")
-        
-        # Display summary statistics of the detected fraud
-        print("\nSummary of Fraud Reasons:")
-        print(anomalies_df['alert_reason'].value_counts())
-        
-        print("\nFirst 10 Anomalous Transactions:")
-        # Display the first 10 anomalous transactions, showing the reason
-        print(anomalies_df[['transaction_id', 'amount', 'merchant_category', 'location', 'alert_reason']].head(10))
-    else:
-        print("No anomalies found (or an error occurred).")
-    print("-" * 50)
+    engine.dispose()

@@ -1,15 +1,37 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS base
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        postgresql-client \
+        curl \
+        && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install dependencies (FastAPI, Uvicorn, Pandas, Sklearn)
+# Copy and install Python dependencies (cached layer)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy the application code and the SQLite database
+# Copy application code
 COPY api.py .
 COPY detection_logic.py .
-COPY bank_data.db .
+COPY detection_service.py .
+COPY producer.py .
+COPY database.py .
+COPY train_model.py .
+
+# Create non-root user for security
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
 
 # Expose the port Uvicorn runs on
 EXPOSE 8000

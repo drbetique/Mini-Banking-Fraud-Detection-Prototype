@@ -1,0 +1,80 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Data files (don't copy to image)
+*.csv
+*.db
+*.sqlite
+bank_data.db
+transactions.csv
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# Tests (optional - include if you run tests in container)
+tests/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Environment files
+.env
+.env.*
+
+# Logs
+*.log
+
+# MLflow artifacts (will be generated in container)
+mlruns/
+mlartifacts/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Grafana & Prometheus
+grafana/
+prometheus.yml

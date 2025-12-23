@@ -4,6 +4,33 @@ numpy
 scikit-learn
 fastapi
 uvicorn
-pydantic
+pydantic<2
 plotly
 requests
+psycopg2-binary
+SQLAlchemy
+kafka-python-ng
+mlflow
+prometheus_client
+prometheus-fastapi-instrumentator
+
+# Testing
+pytest==7.4.0
+pytest-asyncio==0.21.0
+pytest-cov==4.1.0
+pytest-mock==3.11.1
+httpx==0.24.1
+
+# Security & Performance
+python-dotenv==1.0.0
+slowapi==0.1.9
+redis==5.0.1
+
+# Scheduling
+schedule==1.2.0
+
+# Error Handling & Resilience
+tenacity==8.2.3
+
+# External Data APIs
+stripe==14.1.0

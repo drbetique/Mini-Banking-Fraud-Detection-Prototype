@@ -1,0 +1,130 @@
+groups:
+  - name: fraud_detection_alerts
+    interval: 30s
+    rules:
+      # High-risk fraud transaction spike
+      - alert: HighRiskFraudSpike
+        expr: rate(anomalies_detected_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+          service: fraud-detection
+        annotations:
+          summary: "High-risk fraud transaction spike detected"
+          description: "Anomaly detection rate is {{ $value | humanize }} per second. This may indicate a fraud attack or system issue."
+
+      # Unusually high transaction volume
+      - alert: TransactionVolumeSpike
+        expr: rate(transactions_processed_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: fraud-detection
+        annotations:
+          summary: "Unusually high transaction volume"
+          description: "Transaction processing rate is {{ $value | humanize }} per second, which is above normal thresholds."
+
+      # Processing errors spike
+      - alert: TransactionProcessingErrors
+        expr: rate(transaction_processing_errors_total[5m]) > 0.01
+        for: 2m
+        labels:
+          severity: warning
+          service: detection-service
+        annotations:
+          summary: "Transaction processing errors detected"
+          description: "Error rate is {{ $value | humanize }} per second. Check detection service logs."
+
+  - name: system_health_alerts
+    interval: 30s
+    rules:
+      # API service down
+      - alert: APIServiceDown
+        expr: up{job="api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: api
+        annotations:
+          summary: "API service is down"
+          description: "The fraud detection API has been down for more than 1 minute. Immediate attention required."
+
+      # Detection service down
+      - alert: DetectionServiceDown
+        expr: up{job="detection-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: detection-service
+        annotations:
+          summary: "Detection service is down"
+          description: "The fraud detection service has been down for more than 1 minute. Transactions are not being processed."
+
+      # API high error rate (5xx responses)
+      - alert: APIHighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          service: api
+        annotations:
+          summary: "API returning high error rate"
+          description: "API error rate is {{ $value | humanizePercentage }}. Check API logs and database connectivity."
+
+      # API high latency
+      - alert: APIHighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="api"}[5m])) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          service: api
+        annotations:
+          summary: "API experiencing high latency"
+          description: "95th percentile API latency is {{ $value | humanizeDuration }}. Performance degradation detected."
+
+      # Database connection issues
+      - alert: DatabaseConnectionFailures
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: database
+        annotations:
+          summary: "Database connection failures"
+          description: "Cannot connect to PostgreSQL database. All services will be impacted."
+
+  - name: data_quality_alerts
+    interval: 1m
+    rules:
+      # No transactions processed (possible Kafka issue)
+      - alert: NoTransactionsProcessed
+        expr: increase(transactions_processed_total[10m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          service: detection-service
+        annotations:
+          summary: "No transactions being processed"
+          description: "Zero transactions processed in the last 10 minutes. Check Kafka connectivity and producer status."
+
+      # Anomaly detection rate too high (possible model issue)
+      - alert: AnomalyRateTooHigh
+        expr: rate(anomalies_detected_total[30m]) / rate(transactions_processed_total[30m]) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+          service: ml-model
+        annotations:
+          summary: "Anomaly detection rate abnormally high"
+          description: "{{ $value | humanizePercentage }} of transactions flagged as anomalies. This may indicate a model drift or data quality issue."
+
+      # Anomaly detection rate too low (possible model issue)
+      - alert: AnomalyRateTooLow
+        expr: rate(anomalies_detected_total[30m]) / rate(transactions_processed_total[30m]) < 0.001
+        for: 15m
+        labels:
+          severity: info
+          service: ml-model
+        annotations:
+          summary: "Anomaly detection rate abnormally low"
+          description: "Only {{ $value | humanizePercentage }} of transactions flagged. Model may need retraining."

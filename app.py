@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import sqlite3
+from sqlalchemy import create_engine
+import os
 import requests
-import time 
+import time
 
 # --- Configuration ---
 st.set_page_config(
@@ -12,14 +13,18 @@ st.set_page_config(
 )
 
 # Database constants (Only needed for load_all_transactions)
-DB_NAME = 'bank_data.db'
 TABLE_NAME = 'transactions'
+# NOTE: When running Streamlit locally, this URL must point to the host machine's
+# PostgreSQL port, not the internal Docker service name.
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://user:password@localhost/bankdb")
 
-# CRITICAL API URL: This must be updated with the public URL of your deployed FastAPI service!
-API_URL = "https://mini-fraud-api-vib-c7ehh4h6aqd0bxbb.swedencentral-01.azurewebsites.net/api/v1/anomalies"
+# CRITICAL API URLS
+# Read from environment variables with fallback defaults for local dev
+API_BASE = os.environ.get("API_BASE", "http://localhost:8000/api/v1")
+API_URL = f"{API_BASE}/anomalies"
 
-# --- API KEY (MUST match the AZURE_API_KEY environment variable set in Azure) ---
-API_KEY = "s3cr3t-pr0t0typ3-k3y-2025" # **REPLACE WITH YOUR ACTUAL SECRET KEY**
+# --- API KEY (MUST match the AZURE_API_KEY environment variable set in docker-compose.yml) ---
+API_KEY = os.environ.get("API_KEY", "your-secret-api-key")
 HEADERS = {"X-API-Key": API_KEY}
 
 
@@ -28,26 +33,25 @@ HEADERS = {"X-API-Key": API_KEY}
 def update_transaction_status(transaction_id, status):
     """Sends a PUT request to the API to update a transaction's status."""
     
-    # Base URL is everything up to /api/v1/
-    api_base_url = API_URL.rsplit('/', 1)[0] # Trims '/anomalies'
-    put_url = f"{api_base_url}/{transaction_id}"
-    
+    put_url = f"{API_BASE}/anomalies/{transaction_id}"
+
     try:
         with st.spinner(f"Updating status for {transaction_id}..."):
             response = requests.put(
-                put_url, 
-                params={"new_status": status.upper()},
-                headers=HEADERS
+                put_url,
+                json={"new_status": status.upper()},
+                headers=HEADERS,
+                timeout=10,
             )
             response.raise_for_status()
-            
+
             # Clear the cache so the dashboard reloads data immediately
             st.cache_data.clear()
-            
+
             st.toast(f"Status for {transaction_id[:8]}... updated to {status.upper()}", icon="✅")
-            time.sleep(1) # Wait for toast to display
-            st.rerun() # Force Streamlit to rerun and display the updated data/alerts
-            
+            time.sleep(1)
+            st.rerun()
+
     except requests.exceptions.RequestException as e:
         st.error(f"Error updating status for {transaction_id}. Details: {e}")
 
@@ -57,18 +61,13 @@ def update_transaction_status(transaction_id, status):
 def color_score(score):
     """Returns an HTML string to display the score with a colored background."""
     
-    # 1. Define Risk Tiers
     if score >= 0.8:
-        color = "#ff4b4b"  # Bright Red for High Risk
-        risk_level = "HIGH"
+        color, risk_level = "#ff4b4b", "HIGH"
     elif score >= 0.5:
-        color = "#ffbd59"  # Amber/Yellow for Medium Risk
-        risk_level = "MEDIUM"
+        color, risk_level = "#ffbd59", "MEDIUM"
     else:
-        color = "#008000"  # Dark Green for Low/No Risk
-        risk_level = "LOW"
+        color, risk_level = "#008000", "LOW"
         
-    # 2. Return styled HTML
     html_code = (
         f'<div style="background-color: {color}; color: white; padding: 4px; '
         f'border-radius: 4px; text-align: center; font-weight: bold; '
@@ -81,50 +80,45 @@ def color_score(score):
 
 # --- Data Loading (Caching for performance) ---
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60) # Reduced TTL for faster refresh during dev
 def load_anomalies():
     """Fetches anomaly data from the decoupled FastAPI backend via HTTP request."""
     st.info(f"Fetching anomaly data from API: {API_URL}")
     try:
-        # Pass the headers with the API key
-        response = requests.get(API_URL, headers=HEADERS) 
-        response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
+        response = requests.get(API_URL, headers=HEADERS, timeout=10) 
+        response.raise_for_status()
         
         data = response.json().get('data', [])
-        
-        # Convert the returned JSON list back into a DataFrame
         anomaly_df = pd.DataFrame(data)
         
-        # Ensure the score is numerical before being passed to color_score()
         if 'ml_anomaly_score' in anomaly_df.columns:
-            # CLEANUP STEP 1: Remove any potential '\n' characters and convert to numeric
-            anomaly_df['ml_anomaly_score'] = anomaly_df['ml_anomaly_score'].astype(str).str.replace('\n', '', regex=False).str.strip()
             anomaly_df['ml_anomaly_score'] = pd.to_numeric(anomaly_df['ml_anomaly_score'], errors='coerce').fillna(0)
         
-        # CLEANUP STEP 2: Remove any potential '\n' characters from location column
         if 'location' in anomaly_df.columns:
             anomaly_df['location'] = anomaly_df['location'].astype(str).str.replace('\n', '', regex=False).str.strip()
 
-        # Fill missing 'status' column if it's not provided by the API (or is null)
         if 'status' not in anomaly_df.columns:
              anomaly_df['status'] = 'NEW'
         else:
-             anomaly_df['status'] = anomaly_df['status'].fillna('NEW').str.upper() # Ensure status is not NA
+             anomaly_df['status'] = anomaly_df['status'].fillna('NEW').str.upper()
 
         return anomaly_df
         
     except requests.exceptions.RequestException as e:
-        st.error(f"Error connecting to API backend. Ensure 'uvicorn api:app' is running and the API_URL is correct. Error: {e}")
-        return pd.DataFrame() # Return empty DataFrame on failure
+        st.error(f"Error connecting to API backend. Is it running via `docker-compose up`? Error: {e}")
+        return pd.DataFrame()
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60)
 def load_all_transactions():
-    """Loads all transactions directly from the local DB for summary stats."""
-    # This function is not affected by the API key, but kept for completeness
-    conn = sqlite3.connect(DB_NAME)
-    df = pd.read_sql_query(f"SELECT * FROM {TABLE_NAME}", conn)
-    conn.close()
-    return df
+    """Loads all transactions directly from the PostgreSQL DB for summary stats."""
+    try:
+        engine = create_engine(DATABASE_URL)
+        with engine.connect() as conn:
+            df = pd.read_sql_query(f"SELECT * FROM {TABLE_NAME}", conn)
+        return df
+    except Exception as e:
+        st.error(f"Error connecting to the database for summary stats. Is PostgreSQL running? Error: {e}")
+        return pd.DataFrame()
 
 
 # --- Main Application ---
@@ -138,19 +132,26 @@ total_transactions = len(all_df)
 total_anomalies = len(anomaly_df)
 
 # --- NEW: Global Alert System ---
-high_risk_new_anomalies = anomaly_df[
-    (anomaly_df['ml_anomaly_score'] >= 0.8) & 
-    (anomaly_df['status'] == 'NEW')
-]
-num_alerts = len(high_risk_new_anomalies)
+if not anomaly_df.empty and 'ml_anomaly_score' in anomaly_df.columns and 'status' in anomaly_df.columns:
+    high_risk_new_anomalies = anomaly_df[
+        (anomaly_df['ml_anomaly_score'] >= 0.8) &
+        (anomaly_df['status'] == 'NEW')
+    ]
+    num_alerts = len(high_risk_new_anomalies)
 
-if num_alerts > 0:
-    st.error(
-        f"🚨 **ACTIVE HIGH-RISK ALERT:** {num_alerts} unreviewed anomalies require immediate attention!", 
-        icon="⚠️"
-    )
+    if num_alerts > 0:
+        st.error(
+            f"🚨 **ACTIVE HIGH-RISK ALERT:** {num_alerts} unreviewed anomalies require immediate attention!",
+            icon="⚠️"
+        )
+    else:
+        st.success("✅ No high-risk alerts at this time.")
 else:
-    st.success("System Status: All high-risk anomalies have been reviewed.")
+    num_alerts = 0
+    if total_anomalies == 0:
+        st.info("ℹ️ No anomalies detected yet. System is monitoring transactions.")
+    else:
+        st.success("✅ No high-risk alerts at this time.")
 
 
 # Tabs

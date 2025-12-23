@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s # How frequently to scrape targets by default.
+  evaluation_interval: 30s # How frequently to evaluate alert rules.
+
+# Alert rules configuration
+rule_files:
+  - '/etc/prometheus/prometheus_alerts.yml'
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'api'
+    # metrics_path defaults to /metrics
+    static_configs:
+      - targets: ['api:8000'] # 'api' is the service name in docker-compose
+
+  - job_name: 'detection_service'
+    # metrics_path defaults to /metrics
+    static_configs:
+      - targets: ['detection_service:8001'] # 'detection_service' is the service name in docker-compose, 8001 is the custom port
