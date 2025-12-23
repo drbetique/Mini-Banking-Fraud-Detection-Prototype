@@ -18,16 +18,16 @@ prometheus-fastapi-instrumentator
 pytest==7.4.0
 pytest-asyncio==0.21.0
 pytest-cov==4.1.0
-pytest-mock==3.11.1
-httpx==0.24.1
+pytest-mock==3.15.1
+httpx==0.28.1
 
 # Security & Performance
-python-dotenv==1.0.0
+python-dotenv==1.2.1
 slowapi==0.1.9
 redis==5.0.1
 
 # Scheduling
-schedule==1.2.0
+schedule==1.2.2
 
 # Error Handling & Resilience
 tenacity==8.2.3
