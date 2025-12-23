@@ -24,7 +24,7 @@ httpx==0.24.1
 # Security & Performance
 python-dotenv==1.0.0
 slowapi==0.1.9
-redis==5.0.1
+redis==7.1.0
 
 # Scheduling
 schedule==1.2.0
