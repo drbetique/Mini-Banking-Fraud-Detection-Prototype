@@ -46,14 +46,14 @@ jobs:
         continue-on-error: true
 
       - name: Upload Safety report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: safety-vulnerability-report
           path: safety-report.json
 
       - name: Upload pip-audit report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: pip-audit-report
@@ -84,7 +84,7 @@ jobs:
             --severity-level medium
 
       - name: Upload Bandit report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: bandit-security-report
@@ -133,7 +133,7 @@ jobs:
           output: 'trivy-report.json'
 
       - name: Upload Trivy JSON report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: trivy-container-scan-report
@@ -183,7 +183,7 @@ jobs:
           pip-licenses --format=markdown --output-file=licenses.md
 
       - name: Upload license report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: license-report
           path: |
@@ -223,7 +223,7 @@ jobs:
           echo "Download detailed reports from workflow artifacts." >> security-summary.md
 
       - name: Upload summary report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: security-summary-report
           path: security-summary.md
