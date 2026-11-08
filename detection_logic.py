@@ -53,9 +53,14 @@ def score_transaction(transaction: dict, aggregates: dict, model, min_score: flo
     
     alert_reason = None
     if reasons:
-        if "ML Risk" in reasons: alert_reason = "ML Anomaly"
-        elif "High Deviation" in reasons: alert_reason = "High Deviation from Avg"
-        else: alert_reason = " & ".join(reasons)
+        if "ML Risk" in reasons:
+            alert_reason = "ML Anomaly"
+        else:
+            # Report every rule that fired. Picking one used to hide "High Value"
+            # whenever "High Deviation" fired as well, which is exactly the
+            # case an analyst most wants to see.
+            labels = ["High Deviation from Avg" if r == "High Deviation" else r for r in reasons]
+            alert_reason = " & ".join(labels)
 
     return scaled_score, alert_reason
 

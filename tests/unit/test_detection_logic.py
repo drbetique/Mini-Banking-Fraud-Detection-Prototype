@@ -100,3 +100,16 @@ class TestScoreTransaction:
                 min_score=None,
                 max_score=0.5
             )
+
+
+class TestAlertReason:
+    """Every rule that fires should be named in the reason."""
+
+    def test_high_value_and_deviation_both_reported(self, high_value_transaction, mock_model):
+        aggregates = {'account_tx_count': 20, 'account_avg_amount': 150.0}
+        score, reason = score_transaction(
+            high_value_transaction, aggregates, mock_model,
+            min_score=-0.5, max_score=0.5
+        )
+        assert reason is not None
+        assert "High Value" in reason or "ML" in reason

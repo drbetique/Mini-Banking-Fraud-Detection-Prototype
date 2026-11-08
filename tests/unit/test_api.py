@@ -109,6 +109,42 @@ class TestUpdateStatus:
         # Should not fail validation (422)
         assert response.status_code != 422, "Lowercase status should be accepted"
 
+    def test_mixed_case_and_padded_status_accepted(self):
+        """Status is trimmed and case-insensitive."""
+        response = client.put(
+            "/api/v1/anomalies/TRX_NONEXISTENT",
+            json={"new_status": "  Investigated "},
+            headers={"X-API-Key": "test-key-for-testing"}
+        )
+        assert response.status_code != 422
+
+    def test_non_string_status_rejected(self):
+        """A non-string status is still a validation error."""
+        response = client.put(
+            "/api/v1/anomalies/TRX_001",
+            json={"new_status": 5},
+            headers={"X-API-Key": "test-key-for-testing"}
+        )
+        assert response.status_code == 422
+
+
+class TestAnomalyStatusFilter:
+    """Filtering the anomaly list by status."""
+
+    def test_lowercase_filter_accepted(self):
+        response = client.get(
+            "/api/v1/anomalies?status=fraud",
+            headers={"X-API-Key": "test-key-for-testing"}
+        )
+        assert response.status_code != 422
+
+    def test_unknown_filter_rejected(self):
+        response = client.get(
+            "/api/v1/anomalies?status=bogus",
+            headers={"X-API-Key": "test-key-for-testing"}
+        )
+        assert response.status_code == 422
+
 
 class TestCORS:
     """Test suite for CORS configuration."""

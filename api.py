@@ -41,16 +41,23 @@ async def get_api_key(api_key: str = Security(api_key_header)):
     raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key header")
 
 # --- Pydantic Models ---
+VALID_STATUSES = ("NEW", "INVESTIGATED", "FRAUD", "DISMISSED")
+
+
 class UpdateStatusRequest(BaseModel):
     new_status: Literal["NEW", "INVESTIGATED", "FRAUD", "DISMISSED"] = Field(
         ...,
         description="New status for the transaction"
     )
 
-    @validator('new_status')
+    @validator('new_status', pre=True)
     def validate_status(cls, v):
-        """Ensure status is uppercase."""
-        return v.upper()
+        """Normalise to uppercase before the allowed-values check runs.
+
+        pre=True matters: without it the Literal check rejects "fraud" first
+        and this code is never reached.
+        """
+        return v.strip().upper() if isinstance(v, str) else v
 
 class UpdateStatusResponse(BaseModel):
     transaction_id: str
@@ -216,12 +223,21 @@ def get_anomalies(
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of results"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     min_score: Optional[float] = Query(None, ge=0.0, le=1.0, description="Minimum anomaly score filter"),
-    status: Optional[Literal["NEW", "INVESTIGATED", "FRAUD", "DISMISSED"]] = Query(None, description="Filter by status"),
+    status: Optional[str] = Query(None, description="Filter by status: NEW, INVESTIGATED, FRAUD or DISMISSED (any case)"),
     api_key: str = Depends(get_api_key),
     db: Session = Depends(get_db),
     cache: CacheService = Depends(get_cache)
 ):
     """Fetches flagged anomalies from the database with optional filtering and caching."""
+    # Normalise before building the cache key so "fraud" and "FRAUD" share one entry.
+    if status is not None:
+        status = status.strip().upper()
+        if status not in VALID_STATUSES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"status must be one of: {', '.join(VALID_STATUSES)}"
+            )
+
     # Generate cache key from query parameters
     key = cache_key(
         "anomalies",
