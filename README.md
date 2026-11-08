@@ -232,6 +232,8 @@ See [CACHING.md](CACHING.md) for complete caching guide.
 ### Core Documentation
 - **[CHANGELOG.md](CHANGELOG.md)** - Complete version history and changes
 - **[UPGRADE.md](UPGRADE.md)** - Migration guide from v1.0 to v2.0
+- **[ROADMAP.md](ROADMAP.md)** - What is done, what is broken, and what comes next
+- **[OPTIMIZATION_ROADMAP.md](OPTIMIZATION_ROADMAP.md)** - Long-term design plan for security, testing and resilience
 
 ### Feature Documentation
 - **[NOTIFICATIONS.md](NOTIFICATIONS.md)** - Webhook notification setup (Slack, Discord, Teams, Email)
