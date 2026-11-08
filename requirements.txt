@@ -8,7 +8,7 @@ pydantic<2
 plotly
 requests
 psycopg2-binary
-SQLAlchemy
+SQLAlchemy>=2.0,<2.1
 kafka-python-ng
 mlflow
 prometheus_client
