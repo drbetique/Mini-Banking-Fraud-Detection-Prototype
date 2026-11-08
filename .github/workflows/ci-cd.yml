@@ -228,27 +228,27 @@ jobs:
 
       - name: Start services with Docker Compose
         run: |
-          docker-compose up -d db redis kafka zookeeper
+          docker compose up -d db redis kafka zookeeper
           sleep 30  # Wait for services to be ready
 
       - name: Initialize database
         run: |
-          docker-compose exec -T db psql -U user -d bankdb -c "SELECT 1;"
+          docker compose exec -T db psql -U user -d bankdb -c "SELECT 1;"
 
       - name: Run integration tests
         run: |
-          docker-compose run --rm api pytest tests/integration/ -v
+          docker compose run --rm api pytest tests/integration/ -v
         continue-on-error: true
 
       - name: View service logs on failure
         if: failure()
         run: |
-          docker-compose logs
+          docker compose logs
 
       - name: Cleanup
         if: always()
         run: |
-          docker-compose down -v
+          docker compose down -v
 
   # ==================== DEPLOYMENT TO STAGING ====================
   deploy-staging:
