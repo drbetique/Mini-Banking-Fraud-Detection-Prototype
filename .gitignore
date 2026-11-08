@@ -85,3 +85,12 @@ GEMINI.md
 Gemini.md
 *.gemini.md
 nul
+
+# AI assistant instruction files (local only, never commit)
+AGENT.md
+AGENTS.md
+.cursor/
+.cursorrules
+.windsurfrules
+.aider*
+.github/copilot-instructions.md
